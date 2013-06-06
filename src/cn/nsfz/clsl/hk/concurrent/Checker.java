@@ -1,3 +1,5 @@
+package cn.nsfz.clsl.hk;
+
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
@@ -7,7 +9,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class Checker {
-    public static final int EXPIRE_MIN = 1;
+    public static final int EXPIRE_MIN = 5;
     
     public static final int REMOVE_LIMIT_PER_CHECK = 10;
     
@@ -23,7 +25,7 @@ public class Checker {
         //当前时间
         long current = System.currentTimeMillis();
         //过期时间
-        long expires = current - EXPIRE_MIN*1*1000;
+        long expires = current - EXPIRE_MIN*6*1000;
         //读锁加锁
         rwlock.readLock().lock();
         //移除过期的值
@@ -62,18 +64,20 @@ public class Checker {
         }
     }
     
-    public void remove(Timer timer){
+    public Timer remove(Timer timer){
         //读锁加锁
         rwlock.readLock().lock();
         lock.lock();
         //检测到该timer仍存在，则移除该timer
-        if(timer==exists.get(timer.getKey())){
+        Timer existTimer = exists.get(timer.getKey());
+        if(timer==existTimer){
             exists.remove(timer.getKey());
             timeLine.remove(timer);
         }
         lock.unlock();
         //读锁解锁
         rwlock.readLock().unlock();
+        return existTimer;
     }
     
     private static class Timer{
