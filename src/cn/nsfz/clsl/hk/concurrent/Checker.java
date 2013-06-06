@@ -1,19 +1,21 @@
-package cn.nsfz.clsl.hk.uuid;
-
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedList;
-import java.util.List;
 import java.util.Map;
+import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class Checker {
-    public static final int EXPIRE_MIN = 5;
+    public static final int EXPIRE_MIN = 1;
     
-    private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    public static final int REMOVE_LIMIT_PER_CHECK = 10;
+    
+    private final ReadWriteLock rwlock = new ReentrantReadWriteLock();
+    
+    private final Lock lock = new ReentrantLock();
 
-    private final List<Timer> timeLine = new LinkedList<Timer>();
+    private final LinkedList<Timer> timeLine = new LinkedList<Timer>();
     
     private final Map<String,Timer> exists = new HashMap<String,Timer>();
     
@@ -21,53 +23,57 @@ public class Checker {
         //当前时间
         long current = System.currentTimeMillis();
         //过期时间
-        long expires = current - EXPIRE_MIN*60*1000;
+        long expires = current - EXPIRE_MIN*1*1000;
         //读锁加锁
-        lock.readLock().lock();
+        rwlock.readLock().lock();
         //移除过期的值
-        List<Timer> expiredtimers = new ArrayList<Timer>();
-        for(Timer timer:timeLine){
-            if(timer.getTime()<=expires){
-                expiredtimers.add(timer);
-            }else{
+        for(int i=0;i<REMOVE_LIMIT_PER_CHECK;){
+            Timer expiredtimer = timeLine.peek();
+            if(expiredtimer==null||expiredtimer.getTime()>expires){
                 break;
             }
-        }
-        for(Timer timer:expiredtimers){
-            exists.remove(timer.getKey());
-            timeLine.remove(timer);
+            lock.lock();
+            if(expiredtimer==exists.get(expiredtimer.getKey())){
+                exists.remove(expiredtimer.getKey());
+            }
+            if(expiredtimer==timeLine.peek()){
+                timeLine.pop();
+                i++;
+            }            
+            lock.unlock();
         }
         //读锁解锁
-        lock.readLock().unlock();
+        rwlock.readLock().unlock();
         //写锁加锁
-        lock.writeLock().lock();
+        rwlock.writeLock().lock();
         //如果有重复值，抛出异常
         if(exists.get(key)!=null&&exists.get(key).getTime()>expires){
             //写锁解锁
-            lock.writeLock().unlock();
+            rwlock.writeLock().unlock();
             throw new Exception();
         }else{
-            //检测没有重复值，将该值塞进    
+            //检测没有重复值，将该值塞进
             Timer timer = new Timer(key,current);
-            timeLine.add(timer);
+            timeLine.offer(timer);
             exists.put(key, timer);
             //写锁解锁
-            lock.writeLock().unlock();
+            rwlock.writeLock().unlock();
             return timer;
-        }        
+        }
     }
     
     public void remove(Timer timer){
         //读锁加锁
-        lock.readLock().lock();
-        Timer existTimer = exists.get(timer.getKey());
+        rwlock.readLock().lock();
+        lock.lock();
         //检测到该timer仍存在，则移除该timer
-        if(existTimer!=null&&timer==existTimer){
+        if(timer==exists.get(timer.getKey())){
             exists.remove(timer.getKey());
             timeLine.remove(timer);
-        }        
+        }
+        lock.unlock();
         //读锁解锁
-        lock.readLock().unlock();
+        rwlock.readLock().unlock();
     }
     
     private static class Timer{
