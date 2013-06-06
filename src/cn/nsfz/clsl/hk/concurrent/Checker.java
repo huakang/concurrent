@@ -25,7 +25,7 @@ public class Checker {
         //当前时间
         long current = System.currentTimeMillis();
         //过期时间
-        long expires = current - EXPIRE_MIN*6*1000;
+        long expires = current - EXPIRE_MIN*60*1000;
         //读锁加锁
         rwlock.readLock().lock();
         //移除过期的值
